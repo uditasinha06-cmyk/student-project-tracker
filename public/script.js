@@ -7,36 +7,27 @@ const saveButton = document.querySelector('#save-button');
 const cancelButton = document.querySelector('#cancel-button');
 const messageBox = document.querySelector('#message');
 
-const STORAGE_KEY = 'workshop-projects-v1';
-
 let projects = [];
 let editingId = null;
 
-function loadProjects() {
+async function loadProjects() {
   try {
-    const storedData = localStorage.getItem(STORAGE_KEY);
-    if (!storedData) {
-      projects = [];
-      return;
+    messageBox.textContent = 'Loading projects...';
+    const response = await fetch('/api/projects');
+    if (!response.ok) {
+      throw new Error(`Failed to load projects (HTTP ${response.status})`);
     }
-    const parsed = JSON.parse(storedData);
-    if (Array.isArray(parsed)) {
-      projects = parsed;
+    const data = await response.json();
+    if (Array.isArray(data)) {
+      projects = data;
+      messageBox.textContent = '';
     } else {
       projects = [];
-      if (messageBox) messageBox.textContent = 'Stored data was invalid. Starting with an empty list.';
+      messageBox.textContent = 'Received invalid data from server.';
     }
   } catch (error) {
     projects = [];
-    if (messageBox) messageBox.textContent = 'Could not load saved projects due to a storage error.';
-  }
-}
-
-function saveProjects() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-  } catch (error) {
-    if (messageBox) messageBox.textContent = 'Changes could not be saved to storage.';
+    messageBox.textContent = error.message || 'Network error while loading projects.';
   }
 }
 
@@ -64,24 +55,36 @@ function renderProjects() {
       statusInput.value = project.status;
       saveButton.textContent = 'Save Changes';
       cancelButton.style.display = 'inline-block';
+      messageBox.textContent = '';
     });
 
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
     deleteButton.textContent = 'Delete';
     deleteButton.style.marginLeft = '0.5rem';
-    deleteButton.addEventListener('click', () => {
+    deleteButton.addEventListener('click', async () => {
       const confirmed = window.confirm(`Are you sure you want to delete "${project.name}"?`);
       if (!confirmed) return;
 
-      projects = projects.filter(p => p.id !== project.id);
-      saveProjects();
+      try {
+        messageBox.textContent = 'Deleting project...';
+        const response = await fetch(`/api/projects/${project.id}`, {
+          method: 'DELETE'
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to delete project (HTTP ${response.status})`);
+        }
 
-      if (editingId === project.id) {
-        resetFormTooltip();
+        if (editingId === project.id) {
+          resetFormTooltip();
+        }
+
+        await loadProjects();
+        renderProjects();
+        messageBox.textContent = 'Project deleted successfully.';
+      } catch (error) {
+        messageBox.textContent = error.message || 'Network error while deleting project.';
       }
-
-      renderProjects();
     });
 
     li.appendChild(editButton);
@@ -97,7 +100,7 @@ function resetFormTooltip() {
   cancelButton.style.display = 'none';
 }
 
-form.addEventListener('submit', event => {
+form.addEventListener('submit', async event => {
   event.preventDefault();
 
   const projectName = nameInput.value.trim();
@@ -105,30 +108,54 @@ form.addEventListener('submit', event => {
 
   if (!projectName) return;
 
-  if (editingId !== null) {
-    const project = projects.find(p => p.id === editingId);
-    if (project) {
-      project.name = projectName;
-      project.status = projectStatus;
-    }
-  } else {
-    const newProject = {
-      id: Date.now(),
-      name: projectName,
-      status: projectStatus
-    };
-    projects.push(newProject);
-  }
+  try {
+    if (editingId !== null) {
+      messageBox.textContent = 'Saving changes...';
+      const response = await fetch(`/api/projects/${editingId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name: projectName, status: projectStatus })
+      });
 
-  saveProjects();
-  renderProjects();
-  resetFormTooltip();
+      if (!response.ok) {
+        throw new Error(`Failed to update project (HTTP ${response.status})`);
+      }
+
+      messageBox.textContent = 'Project updated successfully.';
+    } else {
+      messageBox.textContent = 'Saving new project...';
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name: projectName, status: projectStatus })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to create project (HTTP ${response.status})`);
+      }
+
+      messageBox.textContent = 'Project created successfully.';
+    }
+
+    resetFormTooltip();
+    await loadProjects();
+    renderProjects();
+  } catch (error) {
+    messageBox.textContent = error.message || 'Network error during save operation.';
+  }
 });
 
 cancelButton.addEventListener('click', () => {
   resetFormTooltip();
+  messageBox.textContent = '';
 });
 
 // Initial load on page start
-loadProjects();
-renderProjects();
+(async function init() {
+  await loadProjects();
+  renderProjects();
+})();
