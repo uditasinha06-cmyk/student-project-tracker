@@ -9,6 +9,7 @@ const messageBox = document.querySelector('#message');
 
 let projects = [];
 let editingId = null;
+let isSubmitting = false;
 
 async function loadProjects() {
   try {
@@ -43,7 +44,7 @@ function renderProjects() {
 
   projects.forEach(project => {
     const li = document.createElement('li');
-    li.textContent = `${project.name} - Status: ${project.status} `;
+    li.textContent = `${project.name} - Status: ${project.status}`;
 
     const editButton = document.createElement('button');
     editButton.type = 'button';
@@ -106,7 +107,11 @@ form.addEventListener('submit', async event => {
   const projectName = nameInput.value.trim();
   const projectStatus = statusInput.value;
 
-  if (!projectName) return;
+  if (!projectName || isSubmitting) return;
+
+  isSubmitting = true;
+  saveButton.disabled = true;
+  cancelButton.disabled = true;
 
   try {
     if (editingId !== null) {
@@ -146,6 +151,10 @@ form.addEventListener('submit', async event => {
     renderProjects();
   } catch (error) {
     messageBox.textContent = error.message || 'Network error during save operation.';
+  } finally {
+    isSubmitting = false;
+    saveButton.disabled = false;
+    cancelButton.disabled = false;
   }
 });
 
